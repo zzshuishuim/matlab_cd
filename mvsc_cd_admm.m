@@ -23,10 +23,19 @@ function [S_star, C, Z_set, E_set, history] = mvsc_cd_admm(views, opts)
 %
 %   The final affinity for spectral clustering is |S_star|.
 
-if nargin < 2 || isempty(opts)
-    opts = struct();
+arguments
+    views (1,:) cell
+    opts.alpha double = 1
+    opts.beta double = 1
+    opts.gamma double = 1
+    opts.lambda_e double = 1e-1
+    opts.tau double = 1
+    opts.p double = 1
+    opts.rho double = 1
+    opts.max_iter double = 100
+    opts.tol double = 1e-4
+    opts.verbose (1,1) logical = false
 end
-opts = fill_defaults(opts);
 
 V = numel(views);
 if V == 0
@@ -49,10 +58,9 @@ history = struct('primal', [], 'dual', [], 'obj', []);
 alpha = opts.alpha; beta = opts.beta; gamma = opts.gamma;
 lambda_e = opts.lambda_e; tau = opts.tau; p = opts.p;
 rho = opts.rho; max_iter = opts.max_iter; tol = opts.tol;
-verbose = opts.verbose; innerEIter = opts.innerEIter;
+verbose = opts.verbose;
 
-    % Use sample-as-rows formulation: X is N x d, so XtX is N x N
-    XtX = cellfun(@(X) X * X.', views, 'UniformOutput', false);
+XtX = cellfun(@(X) X.'*X, views, 'UniformOutput', false);
 
 for iter = 1:max_iter
     Z_prev = Z_set;
@@ -64,7 +72,7 @@ for iter = 1:max_iter
         Xv = views{v};
         Ev = E_set{v};
         A = XtX{v} + (beta + gamma*(V-1))*eye(N);
-        rhs = (Xv - Ev) * Xv.' + beta*C + gamma*sum_except(Z_prev, v);
+        rhs = Xv.'*(Xv - Ev) + beta*C + gamma*sum_except(Z_prev, v);
         % Sylvester form A*Z + Z*0 = rhs
         Zv = sylvester(A, zeros(N), rhs);
         Zv(1:N+1:end) = 0; % enforce diag(Z)=0
@@ -85,20 +93,15 @@ for iter = 1:max_iter
     S_star = (S_star + S_star.')/2; % symmetrize for stability
     S_star(1:N+1:end) = 0;
 
-    % === E update (weighted L1 via ISTA with inner loops) ===
+    % === E update (weighted L1 via ISTA) ===
     for v = 1:V
         Xv = views{v};
         Zv = Z_set{v};
-        E_v = E_set{v};
-        for ii = 1:innerEIter
-            residual = Xv - Zv*Xv - E_v;
-            W = 1 ./ (abs(E_v) + 1e-6);
-            grad = -residual;
-            step = 1.0; % simple ISTA step; could be tuned by Lipschitz est
-            E_temp = E_v - step * grad;
-            E_v = soft_threshold(E_temp, lambda_e * step .* W);
-        end
-        E_set{v} = E_v;
+        residual = Xv - Xv*Zv;
+        W = 1 ./ (abs(E_set{v}) + 1e-6);
+        thresh = lambda_e * W;
+        E_temp = residual;
+        E_set{v} = soft_threshold(E_temp, thresh);
     end
 
     % === Dual update ===
@@ -118,14 +121,14 @@ for iter = 1:max_iter
     history.obj(end+1) = obj_val;
 
     if verbose && mod(iter, 5) == 0
-        r_cs = norm(C - S_star, 'fro') / max(1, norm(S_star, 'fro'));
-        fprintf('Iter %03d | obj %.4e | primal %.3e | dual %.3e | r(C-S)=%.3e\n', ...
-            iter, obj_val, primal_res, dual_res, r_cs);
+        fprintf('Iter %03d | obj %.4e | primal %.3e | dual %.3e\n', iter, obj_val, primal_res, dual_res);
     end
 
     if primal_res < tol && dual_res < tol
         break;
     end
+end
+
 end
 
 function Zsum = sum_except(Z_set, idx)
@@ -185,7 +188,7 @@ for v = 1:V
     Xv = views{v};
     Zv = Z_set{v};
     Ev = E_set{v};
-    val = val + 0.5 * norm(Xv - Zv*Xv - Ev, 'fro')^2 + lambda_e * sum(abs(Ev), 'all') ...
+    val = val + 0.5 * norm(Xv - Xv*Zv - Ev, 'fro')^2 + lambda_e * sum(abs(Ev), 'all') ...
         + 0.5*beta*norm(Zv - C, 'fro')^2 + 0.5*gamma*norm(Zv - S, 'fro')^2;
 end
 % Schatten term on S
@@ -195,29 +198,5 @@ if p >= 1
     val = val + tau * sum(sing);
 else
     val = val + tau * sum(sing.^p);
-end
-
-end
-
-function opts = fill_defaults(opts)
-defaults = struct( ...
-    'alpha', 1, ...
-    'beta', 1, ...
-    'gamma', 1, ...
-    'lambda_e', 1e-1, ...
-    'tau', 1, ...
-    'p', 1, ...
-    'rho', 1, ...
-    'max_iter', 100, ...
-    'tol', 1e-4, ...
-    'verbose', false, ...
-    'innerEIter', 5 ...
-);
-fields = fieldnames(defaults);
-for i = 1:numel(fields)
-    f = fields{i};
-    if ~isfield(opts, f) || isempty(opts.(f))
-        opts.(f) = defaults.(f);
-    end
 end
 end

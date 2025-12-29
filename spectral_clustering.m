@@ -1,5 +1,5 @@
 function [labels, eigvecs] = spectral_clustering(W, k, opts)
-%SPECTRAL_CLUSTERING Normalized spectral clustering wrapper with stability tweaks.
+%SPECTRAL_CLUSTERING Normalized spectral clustering wrapper.
 %   [LABELS, EIGVECS] = SPECTRAL_CLUSTERING(W, K, OPTS)
 %   Inputs:
 %     W    - affinity matrix (NxN, symmetric)
@@ -8,17 +8,13 @@ function [labels, eigvecs] = spectral_clustering(W, k, opts)
 %            .type ('normalized' | 'unnormalized')
 %            .n_init (k-means replicates)
 %            .max_iter (k-means max iterations)
-%            .seed (rng seed)
 
-if nargin < 3
-    opts = struct();
-end
-opts = fill_defaults(opts);
-
-if isfield(opts, 'seed') && ~isempty(opts.seed)
-    rng(opts.seed);
-else
-    rng(0);
+arguments
+    W double
+    k double {mustBePositive, mustBeInteger}
+    opts.type char = 'normalized'
+    opts.n_init double = 10
+    opts.max_iter double = 200
 end
 
 if size(W,1) ~= size(W,2)
@@ -46,22 +42,5 @@ norms = sqrt(sum(eigvecs.^2,2));
 norms(norms==0) = 1;
 Y = eigvecs ./ norms;
 
-labels = kmeans(Y, k, 'Replicates', opts.n_init, 'MaxIter', opts.max_iter, ...
-    'Start', 'plus', 'Display','off');
-end
-
-function opts = fill_defaults(opts)
-defaults = struct( ...
-    'type', 'normalized', ...
-    'n_init', 30, ...
-    'max_iter', 1000, ...
-    'seed', 0 ...
-);
-fields = fieldnames(defaults);
-for i = 1:numel(fields)
-    f = fields{i};
-    if ~isfield(opts, f) || isempty(opts.(f))
-        opts.(f) = defaults.(f);
-    end
-end
+labels = kmeans(Y, k, 'Replicates', opts.n_init, 'MaxIter', opts.max_iter, 'Display','off');
 end
