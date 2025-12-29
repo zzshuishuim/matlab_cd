@@ -80,6 +80,26 @@ results = runtests('tests');
 table(results)
 ```
 
+## Recent enhancements (interfaces unchanged)
+- Data preprocessing (loader): optional row-wise z-score per view (`opts.preprocess.rowZScore`, default **false**) and view energy alignment (`opts.preprocess.viewEnergyAlign`, default **true**) applied before column L2 normalization.
+- Graph polishing (`src/build_affinity_from_S.m`): removes diag, abs-symmetrizes, adaptive Top-K (`choose_topk`), auto symmetrize (`max/avg/auto`), optional column normalization and diffusion. Controlled via `opts.graph` (default: `topK='auto'`, `colNormalize=true`, `symmetrizeMode='auto'`).
+- Spectral clustering stability: normalized Laplacian, eigenvector row-normalization, k-means with `Start='plus'`, `Replicates=30`, `MaxIter=1000`, fixed seed (`opts.seed`, default 0).
+- ADMM engineering: multiple inner ISTA steps on `E` (`opts.innerEIter`, default 5) and verbose residual print of `r(C-S)` when `verbose=true` (core updates unchanged).
+- Lambda light autotune (`choose_lambda_light`): short warmup over small lambda grid using graph density/connectivity (and ACC/NMI if labels exist) to pick `lambda_e`. Enabled in `run_demo` by default (`opts.autotune.lambda='light'`), disable via `'off'`.
+- Quick tuning script: `scripts/tune_params_grid.m` runs a small grid over `{alpha, lambda_e, gamma, p}`, saves to `results/tuning_*.mat`, and rechecks top configs with more iterations.
+
+## How to toggle enhancements in run_demo
+```matlab
+% disable lambda autotune and graph Top-K
+run_demo('datasets/BBCSport.mat', struct( ...
+    'autotune', struct('lambda','off'), ...
+    'graph', struct('topKEnabled', false)));
+
+% enable diffusion or change Top-K override
+opts = struct('graph', struct('diffusion', true, 'topKOverride', 15));
+run_demo('datasets/Caltech101-7.mat', opts);
+```
+
 ## Notes and memory hints
 - Normalizing columns helps numerical stability across heterogeneous views.
 - Large datasets may require increasing memory; consider running with reduced `max_iter`
